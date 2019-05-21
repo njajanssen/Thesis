@@ -100,53 +100,91 @@ class MNL:
             if y_pred == Y[i]:
                 acc +=1
         return acc/Y.size
-class MMNL(MNL):
-    def __init__(self, X, Y, r :list, R):
-        #r denotes random coefficients, R number of draws
-        super().__init__(X, Y)
-        self.r = r
-        self.rnd_param = np.random.random((len(r),2))
+
+class MMNL:
+    def __init__(self, X, Y, R):
+        #r denotes random coefficients, R number of repetitions
+        self.X = np.zeros(X.shape[0],X.shape[1]+1)
+        self.X[:,2:] = X[:,1:]
+        self.X[:, 1] = 1 #add constant
+        self.X[:,0] = X[:,0] #first column is individual specification
+        self.Y = Y
+        self.lr = 0.01
+        self.k = len(self.X.shape[1])
+        #persons
+        self.N = 300
+        self.J = 4
+        np.random.seed(1)
+        self.beta = np.zeros((3,1))
+        self.b_grad = 0
+        self.var_grad = 0
+        self.theta = np.random.random((3,2))
         self.R = R
         # self.draws = np.zeros((1,len(r)))
 
-    def sim_prob(self, seed, R, x):
-        #create rxJ, for every random coefficient a drawn value from f(.)
-        np.random.seed(seed)
-        draws = np.zeros((len(self.r),self.J))
-        p_sim = 0
-        for r in range(R):
-            for r_ in range(len(self.r)):
-                draws[r_,:] = np.random.normal(self.rnd_param[r_,0],self.rnd_param[r_,1],(1,self.J))
-                self.beta[self.r[r_],:] = draws
-                p_sim += sigmoid(x@self.beta)
-        return p_sim/R
+    def validation_split(self, split=.1):
+        val = int(self.N // (1 / split))
+        X_val = self.X[:val, :]
+        X_train = self.X[val:, :]
+        Y_val = self.Y[:val, :]
+        Y_train = self.Y[val:, :]
+        return X_train, X_val, Y_train, Y_val
 
-    def sgd(self, epochs, X_train, X_val, Y_train,Y_val):
-        logger = []
-        accer = []
-        for epoch in range(epochs):
+    def softmax(self, obs, brand):
+        #brand: 0, 1, 2, or 3
+        #grab x corresponding to brand choice, [display,feature,price]
+        x = [np.array([self.X[obs, i + 0].reshape(1,3) for i in range(1, self.X.shape[1], step=4)]) for j in range(4)]
+        num = np.exp(x[brand]@self.beta)
+        denom = np.sum([np.exp(x[j]@self.beta) for j in range(4) if j!=brand])
+        return num/denom
+
+    def softmax_panel(self, person, brand):
+        #person: individual for which probability is to be calculated
+        #brand: alternative j which person chooses on period t
+        t = np.searchsorted(self.X[:,0], person, side= 'left')
+        current_t = np.searchsorted(self.X[:,0], person, side= 'right')
+        prod = 1
+        while self.X[t,0] == person:
+            if t<current_t:
+                prod *= self.softmax(person,self.Y[t])
+            else:
+                prod *=self.softmax(person,brand)
+            t += 1
+        return prod
+
+
+    def SMC(self,func, person,brand):
+        S = 0
+        for r in range(self.R):
+            for l in range(self.beta.size):
+                self.beta[l] = func(self.theta[l,0],self.theta[l,1])
+                S += self.softmax_panel(person,brand)
+        return S/self.R
+
+    def SMC_gradient(self):
+        pass
+
+
+    def solver(self, prob, grad):
+        #prob: method to calculate choice probability (eg: SMC, QMC, Bayesian MC, Curbature, etc.)
+        #grad: gradient of specified choice probability
+        X_train, X_val, Y_train, Y_val = self.validation_split(.1)
+        prod = 1
+        for epoch in range(500):
             log_lik = 0
             seed = np.arange(Y_train.size)
             np.random.shuffle(seed)
             X = X_train[seed]
             Y = Y_train[seed]
-            for i in range(Y.size):
-                beta_grad = np.zeros(self.beta.shape)
-                rnd_grad = np.zeros(self.rnd_param.shape)
-                p_sim = self.sim_prob(i, self.R, np.reshape(X[i, :]))
+            for i in range(self.N):
+                theta_grad= np.zeros(self.theta.shape)
+                t_pred = np.searchsorted(self.X[:, 0], i, side='right') #last occurance of person i
                 for j in range(self.J):
-                    if Y[i] == j:
-                        log_lik += np.log(p_sim[0, j])
-                        if j != 0: #dont calc gradient of the random coefficients
-                            beta_grad[:, j] += (1 - p_sim[0, j]) * np.transpose(X[i, :])
-                    elif j != 0:
-                        beta_grad[:, j] -= p_sim[0, j] * np.transpose(X[i, :])
-                self.update(beta_grad)
-            logger.append(log_lik)
-            acc = self.accuracy(X_val, Y_val)
-            accer.append(acc)
-            print("Log likelihood: %f, epoch: %i, validation accuracy: %f" % (log_lik, epoch + 1, acc))
-        plotter(range(epochs), logger, accer)
+                    pred = self.prob(np.random.normal,i,j)
+                    if Y[t_pred] == j:
+                        pass #do grad
+                    else:
+                        pass #do smc_grad
 
 
 
