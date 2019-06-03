@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+from scipy.stats import norm
 import random
+import time
 
 
 def load_data(path):
@@ -30,6 +32,97 @@ def sigmoid(x: np.ndarray):
     numerator = np.exp(x) + 1e-6
     denominator = np.sum(numerator)
     return numerator / denominator
+#
+def primes(amount):
+    primes = []
+    i = 2
+    pos_prime = True
+    while len(primes) < amount:
+        for p in primes:
+            if i % p != 0:
+                pos_prime = True
+            else:
+                pos_prime = False
+                break
+        if pos_prime:
+            primes.append(i)
+        i += 1
+    return primes
+
+def halton(R, primes: list):
+    #R: amount of draws, first 10 draws are eliminated
+    #return: dimensionxR matrix, for each prime provided, a halton sequence is calculated
+    sequence =[[0] for i in range(len(primes))]
+    i = 0
+    for prime in primes:
+        t = 1
+        while len(sequence[i][10:])<=R:
+            s_t = np.array(sequence[i])
+            for k in range(1, prime):
+                s_t1= s_t+k/prime**t
+                [sequence[i].append(float(item)) for item in s_t1]
+            t+=1
+        i += 1
+    return np.array([np.array(sub_seq[10:R+10]) for sub_seq in sequence])
+
+def sequence_create(sequence, K, N):
+    #create Nxlen(sequence) different sequences
+    result = np.zeros((N,K), dtype=np.int8)
+    sequence = np.array(sequence)
+    i_1 = 0
+    i_2 = 0
+    k = 0
+    nmr_primes = sequence.size
+    if nmr_primes*(nmr_primes-1)*(nmr_primes-2) < N:
+        raise ValueError('Not enough primes provided to create %i independend sequences' %(N))
+    prev_n = 0
+    prev_n2 = 0
+    n2 = nmr_primes-2
+    prod = (nmr_primes-1)*(nmr_primes-2)
+    n = prod
+    while not np.all(result[:,0]) != 0 :
+        result[prev_n:n,0] = sequence[i_1]
+        sequence_row1 = np.delete(sequence,i_1)
+        while not np.all(result[prev_n:n,1]) != 0:
+            result[prev_n2:n2,1] = sequence_row1[i_2]
+            sequence_row2 = np.delete(sequence_row1,i_2)
+            n3 = 0
+            while not np.all(result[prev_n2:(prev_n2+nmr_primes-2),2]) != 0:
+                result[prev_n2+n3,2] = sequence_row2[n3]
+                if n3+1>=N:
+                    n3 = N-1
+                else:
+                    n3 += 1
+
+            prev_n2 = n2
+            if n2+nmr_primes-2>=N:
+                n2 = N
+            else:
+                n2 += nmr_primes-2
+            i_2 += 1
+        prev_n = n
+        if n+prod>=N:
+            n = N
+        else:
+            n+=prod
+        i_2 = 0
+        i_1+= 1
+    return result
+
+def QMC(N,K,R):
+    #N: Amount of observants
+    #K: Amount of mixed variables
+    #R: Amount of draws
+    #return: NxKxR matrix return type: ndarray
+    draws = np.zeros((N,K,R))
+    # sequences = sequence_create(primes(8),K,N)
+    big_draw = halton(R*N,primes(3))
+    prev_i = 0
+    for i in range(0,N):
+        draws[i,:,:] = big_draw[:,prev_i:(i+1)*R]
+        # draws[i,:,:] = halton(R,sequences[i])
+        prev_i = (i+1)*R
+    return norm.ppf(draws)
 
 
 class MNL:
@@ -108,41 +201,38 @@ class MNL:
 
 
 class MMNL:
-    def __init__(self, X, Y, R, mixers,dist=np.random.standard_normal):
+    def __init__(self, X, Y, R, K,method,dist=np.random.standard_normal):
         # r denotes random coefficients, R number of repetitions
         self.X = np.zeros((X.shape[0], X.shape[1] + 1))
         self.X[:, 2:] = X[:, 1:]
         self.X[:, 1] = 1  # add constant
         self.X[:, 0] = X[:, 0]  # first column is individual specification
         self.Y = Y
-        self.lr = 0.00005
-        self.m = 0.
-        self.mixers = mixers
+        self.K = K
         # persons
         self.N = 300
         self.J = 4
         self.R = R
-        self.beta = np.zeros((self.mixers, self.R))
-        self.b_grad = 0
-        self.var_grad = 0
-        self.grad_prev = np.zeros((self.mixers,2))
+        self.beta = np.zeros((self.K, self.R))
+        self.grad_prev = np.zeros((self.K,2))
         # self.theta = np.zeros((3, 2))
         np.random.seed(1)
-        self.draws = dist((self.N, self.mixers, self.R))
-
-    def validation_split(self, split=.1):
-        val = int(self.N // (1 / split))
-        X_val = self.X[:val, :]
-        X_train = self.X[val:, :]
-        Y_val = self.Y[:val, :]
-        Y_train = self.Y[val:, :]
-        return X_train, X_val, Y_train, Y_val
+        if method == 'SMC':
+            self.draws = dist((self.N, self.K, self.R))
+        elif method == 'QMC':
+            #do halton
+            self.draws = QMC(self.N, self.K, self.R)
+        elif method == 'BMC':
+            #do bayesian cubature/monte carlo
+            pass
+        else:
+            raise NameError('%s is not a simulation method, choose SMC, QMC or BMC'%(method))
 
     def softmax(self, obs, brand):
         # brand: 0, 1, 2, or 3
         # grab x corresponding to brand choice, [display,feature,price], for each alternative choice
         brand = int(brand)
-        x = [np.array([self.X[obs, i + j] for i in range(2, self.X.shape[1] - 1, 4)]).reshape((1, self.mixers)) for j in range(4)]
+        x = [np.array([self.X[obs, i + j] for i in range(2, self.X.shape[1] - 1, 4)]).reshape((1, self.K)) for j in range(4)]
         num = np.exp(x[brand] @ self.beta)
         denom = np.sum([np.exp(x[j] @ self.beta) for j in range(4)], axis=0)
         if np.any(np.isnan(num)) or np.any(np.isnan(denom)):
@@ -167,7 +257,7 @@ class MMNL:
 
     def SMC(self, person, brands, theta):
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.mixers][:,None] + delta * theta[self.mixers:][:, None]
+        self.beta = theta[:self.K][:,None] + delta * theta[self.K:][:, None]
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         prob_draws = self.panel(person, brands)
@@ -179,16 +269,16 @@ class MMNL:
         index_finder = np.where(self.X[:, 0] == person)
         t = index_finder[0][0]
         last_t = index_finder[0][-1] + 1
-        grad_b = np.zeros((self.mixers, self.R))
-        grad_sig = np.zeros((self.mixers, self.R))
-        gradient = np.zeros((self.mixers*2,self.R))
+        grad_b = np.zeros((self.K, self.R))
+        grad_sig = np.zeros((self.K, self.R))
+        gradient = np.zeros((self.K*2,self.R))
         i = 0
         while self.X[t, 0] == person:
             # x: [display_brand, feature_brand,price_brand]
             # xdelta: 3x1
             # * is elementwise product
             chosen = int(brands[i])
-            x = [np.array([self.X[t, i + j] for i in range(2, self.X.shape[1] - 1, 4)]).reshape((1, self.mixers)) for j in
+            x = [np.array([self.X[t, i + j] for i in range(2, self.X.shape[1] - 1, 4)]).reshape((1, self.K)) for j in
                  range(4)]
             for l in range(4):
                 if l == chosen:
@@ -208,8 +298,8 @@ class MMNL:
             i += 1
             if t == last_t:
                 break
-        gradient[:4,:] = grad_b
-        gradient[4:,:] = grad_sig
+        gradient[:self.K,:] = grad_b
+        gradient[self.K:,:] = grad_sig
         return gradient
 
     def SMC_gradient(self, person, brands, prob, prob_sequence, theta):
@@ -218,36 +308,30 @@ class MMNL:
         S = 0
         grad_b, grad_sig = 0, 0
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.mixers][:,None] + delta * theta[self.mixers:][:, None]
+        self.beta = theta[:self.K][:,None] + delta * theta[self.K:][:, None]
         gradient = self.panel_grad(person, brands, delta, prob, prob_sequence)
         if np.any(np.isnan(grad_b)) or np.any(np.isnan(grad_sig)):
             raise ValueError('b: %a or sig: %a is Nan' % (grad_b, grad_sig))
 
         return gradient.mean(axis=1)
 
-    def update(self, theta,gradient_tuple):
-        gradients = np.zeros(theta.shape)
-        i = 0
-        for grad in gradient_tuple:
-            gradients[:,i] = grad.reshape((-1,))
-            i+=1
-        theta += self.lr*(self.m*self.grad_prev+(1-self.m) * gradients)
-        self.grad_prev = gradients
-        return theta
-
     def solver(self):
         # prob: method to calculate choice probability (eg: SMC, QMC, Bayesian MC, Curbature, etc.)
         # 0: SMC
         # grad: gradient of specified choice probability
         # maximum likelihood for estimation
-        theta0 = np.zeros(self.mixers*2)
-        global iters
+
+        theta0 = np.zeros(self.K*2)
+        global iters, start
+        start = time.time()
         iters = 1
+        current_time = start - time.time()
         result = minimize(self.log_likelihood,theta0, callback=self.callback,options={'disp':True, 'maxiter':2000},method='Nelder-Mead', jac=self.log_likelihood_gradient)
         print(result)
     def callback(self, X):
-        global iters
-        print('iteration: %d'%(iters))
+        global iters, start
+        if iters%10 == 0:
+            print('iteration: %d, time: %f'%(iters, time.time()- start))
         iters+=1
 
 
@@ -281,7 +365,7 @@ class MMNL:
             grad = self.SMC_gradient
             prob = self.SMC
 
-        gradient = np.zeros(self.mixers)
+        gradient = np.zeros(self.K)
         person = int(self.X[0, 0])
         for i in range(1, self.N + 1):
             person_index = np.where(self.X[:, 0] == person)
@@ -298,5 +382,6 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    mmnl = MMNL(X, Y, 600,3)
+    mmnl = MMNL(X, Y, 75,3,method='QMC')
     mmnl.solver()
+    pass
