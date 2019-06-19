@@ -323,7 +323,7 @@ class MMNL:
         global iters, start
         start = time.time()
         iters = 1
-        result = minimize(self.log_likelihood, theta0, args, callback=self.callback,
+        result = minimize(self.log_likelihood, theta0, args,
                           options={'disp': False, 'maxiter': 3000},
                           method='Nelder-Mead', jac=self.log_likelihood_gradient)
         print(result)
