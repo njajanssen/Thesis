@@ -247,7 +247,7 @@ class MMNL:
 #     @jit(nopython=True)
     def BQMC(self, person, brands, theta, args=None):
         state = self.states[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + state * theta[self.K:-3][:, None] ** 2
+        self.beta = theta[:self.K][:, None] + state * theta[self.K:][:, None] ** 2
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         mean_prod, cov_prod = self.panel_bc(person, brands, args,theta)
@@ -339,12 +339,12 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    infile = open('./data/10_dgp.p', 'rb')
+    infile = open('./data/500_QMC_dgp.p', 'rb')
     big_dict = pickle.load(infile)
     Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
     bm = MMNL(X, Y, 5, 3, method='BQMC')
 
-    # # bm.solver()
-    qmc = MMNL(X, Y_dgp[:,0], 100, 3, method='QMC')
+    bm.solver()
+    # qmc = MMNL(X, Y_dgp[:,0], 100, 3, method='QMC')
     # qmc.solver()
-    print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))
+    # print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))
