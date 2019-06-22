@@ -7,7 +7,7 @@ from qmc import QMC
 from functools import reduce
 from sklearn.gaussian_process.kernels import Matern
 import pickle
-from numba import jit
+# from numba import jit
 
 def load_data(path):
     dat = np.load(path)
@@ -29,7 +29,6 @@ def scale(rhoma_t: list, mu_t: list, T):
         raise ValueError('infinity')
     return s, final_mu, final_rhoma
 
-@jit(nopython=True)
 def covariance(x: np.ndarray, w: np.ndarray):
     # x: R states of X where X is kx1 thus x is kxR
     # w: weights of each x_k
@@ -177,7 +176,7 @@ class MMNL:
             raise ValueError('gradient is Nan: %g' % (gradient))
 
         return gradient.mean(axis=1)
-    @jit(nopython=True)
+#     @jit(nopython=True)
     def kernel_gauss(self, theta, args=None):
         # f = self.softmax(obs, brand).reshape(-1)
         C = covariance(self.beta, self.w)
@@ -216,12 +215,14 @@ class MMNL:
             prod = np.sum((1 / (b - a)) * prod.T,axis=1)
 
         return lamb ** 2 *  prod, C_inv, 0
-    @jit(nopython=True)
+#     @jit(nopython=True)
     def panel_bc(self, person, brands, theta, args=None):
         # person: individual for which probability is to be calculated
         # brands: sequence of choices person i chooses in the period t={1,...,T}
         if not np.any(args):
             kernel = args['kernel']
+        else:
+            kernel = self.kernel_gauss
         index_finder = np.where(self.X[:, 0] == person)
         t = index_finder[0][0]
         last_t = index_finder[0][-1] + 1
@@ -243,7 +244,7 @@ class MMNL:
 
         return mean_list, var_list
 
-    @jit(nopython=True)
+#     @jit(nopython=True)
     def BQMC(self, person, brands, theta, args=None):
         state = self.states[person - 1, :, :]
         self.beta = theta[:self.K][:, None] + state * theta[self.K:-3][:, None] ** 2
