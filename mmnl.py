@@ -121,7 +121,7 @@ class MMNL:
     # @jit(nopython=True)
     def SMC(self, person, brands, theta):
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None] ** 2
+        self.beta = theta[:self.K][:, None] + delta * np.abs(theta[self.K:][:, None])
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         prob_draws = self.panel(person, brands)
@@ -170,7 +170,7 @@ class MMNL:
         # person: Person for which the choice probability is to be calculated
         # brands: choice sequence of the person
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None] ** 2
+        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None] **2
         gradient = self.panel_grad(person, brands, delta, prob, prob_sequence)
         if np.any(np.isnan(gradient)) or np.any(np.isinf(gradient)):
             raise ValueError('gradient is Nan: %g' % (gradient))
@@ -247,7 +247,7 @@ class MMNL:
 #     @jit(nopython=True)
     def BQMC(self, person, brands, theta, args=None):
         state = self.states[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + state * theta[self.K:][:, None] ** 2
+        self.beta = theta[:self.K][:, None] + state * theta[self.K:][:, None]
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         mean_prod, cov_prod = self.panel_bc(person, brands, args,theta)
