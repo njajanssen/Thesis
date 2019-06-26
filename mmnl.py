@@ -63,7 +63,6 @@ class MMNL:
         self.log_lik = 0
         # persons
         self.N = 300
-        self.J = 4
         self.R = R
         self.beta = np.zeros((self.K, self.R))
         #  self.theta = np.array([ 6.98159295e-01, -5.60684780e-01,  1.09193046e-05,  1.15232294e-01,
@@ -121,7 +120,7 @@ class MMNL:
     # @jit(nopython=True)
     def SMC(self, person, brands, theta):
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + delta * np.abs(theta[self.K:][:, None])
+        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None]
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         prob_draws = self.panel(person, brands)
@@ -170,7 +169,7 @@ class MMNL:
         # person: Person for which the choice probability is to be calculated
         # brands: choice sequence of the person
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None] **2
+        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None]
         gradient = self.panel_grad(person, brands, delta, prob, prob_sequence)
         if np.any(np.isnan(gradient)) or np.any(np.isinf(gradient)):
             raise ValueError('gradient is Nan: %g' % (gradient))
@@ -326,7 +325,7 @@ class MMNL:
         iters = 1
         result = minimize(self.log_likelihood, theta0, args,
                           options={'disp': False, 'maxiter': 3000},
-                          method='Nelder-Mead', jac=self.log_likelihood_gradient)
+                          method='Nelder-Mead')
         print(result)
         return result
 
@@ -339,12 +338,13 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    infile = open('./data/500_QMC_dgp.p', 'rb')
+    infile = open('./data/500_MC_dgp.p', 'rb')
     big_dict = pickle.load(infile)
     Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
     bm = MMNL(X, Y, 5, 3, method='BQMC')
 
-    bm.solver()
-    # qmc = MMNL(X, Y_dgp[:,0], 100, 3, method='QMC')
+    # bm.solver()
+    smc = MMNL(X, Y_dgp[:,0], 250, 3, method='SMC')
+    smc.solver()
     # qmc.solver()
     # print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))

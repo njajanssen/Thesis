@@ -53,5 +53,3 @@ example_mixed.fit_mle(init_vals=np.zeros(2 * len(index_var_names)),
 
 # Look at the estimated results
 print(example_mixed.get_statsmodels_summary())
-
-
