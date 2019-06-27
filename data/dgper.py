@@ -87,7 +87,7 @@ def dgp(X: np.ndarray, D, dist=np.random.rand):
     # X: dataset
     # D: amount of datasets
     np.random.seed(10)
-    theta = np.array([0.9, 1.1, -0.5, 0.1, 0.5, 0.25])
+    theta = np.array([1.5,  1.,  -1.1,  0.4,  0.1,  0.6])
     the_big_dict = {}
     Y_array = np.zeros((2798, D))
     if dist == QMC:
@@ -106,5 +106,5 @@ def dgp(X: np.ndarray, D, dist=np.random.rand):
     return the_big_dict, method
 D = 10
 dicter, method = dgp(X,D)
-timdgp = pickle.load(open('dgp_tip.pickle','rb'))
-print(timdgp)
+# timdgp = pickle.load(open('dgp_tip.pickle','rb'))
+# print(timdgp)

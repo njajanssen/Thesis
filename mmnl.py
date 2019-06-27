@@ -7,7 +7,9 @@ from qmc import QMC
 from functools import reduce
 from sklearn.gaussian_process.kernels import Matern
 import pickle
-# from numba import jit
+from numba import njit
+from numba import jitclass
+from numba import float64,int32
 
 def load_data(path):
     dat = np.load(path)
@@ -15,20 +17,20 @@ def load_data(path):
     Y = np.reshape(dat[:, -1], (-1, 1))
     return X, Y
 
-
-def scale(rhoma_t: list, mu_t: list, T):
-    # scale factor for product of two univariate gaussian pdfs
-    # equation (9) from Bromiley,2018
-    final_rhoma = reduce(lambda x, y: x + 1. / y, rhoma_t)
-    rhoma_prod = reduce(lambda x, y: x * y, rhoma_t)
-
-    final_mu = np.sum([mu_t[t] / rhoma_t[t] for t in range(T)]) * final_rhoma
-    s_exp = np.sum([mu_t[t] ** 2 / rhoma_t[t] - final_mu ** 2 / final_rhoma for t in range(T)])
-    s = 1. / (2 * np.pi) ** ((T - 1) / 2) * np.sqrt(final_rhoma / rhoma_prod) * np.exp(-.5 * s_exp)
-    if np.isinf(s):
-        raise ValueError('infinity')
-    return s, final_mu, final_rhoma
-
+# @njit
+# def scale(rhoma_t: list, mu_t: list, T):
+#     # scale factor for product of two univariate gaussian pdfs
+#     # equation (9) from Bromiley,2018
+#     final_rhoma = reduce(lambda x, y: x + 1. / y, rhoma_t)
+#     rhoma_prod = reduce(lambda x, y: x * y, rhoma_t)
+#
+#     final_mu = np.sum([mu_t[t] / rhoma_t[t] for t in range(T)]) * final_rhoma
+#     s_exp = np.sum([mu_t[t] ** 2 / rhoma_t[t] - final_mu ** 2 / final_rhoma for t in range(T)])
+#     s = 1. / (2 * np.pi) ** ((T - 1) / 2) * np.sqrt(final_rhoma / rhoma_prod) * np.exp(-.5 * s_exp)
+#     if np.isinf(s):
+#         raise ValueError('infinity')
+#     return s, final_mu, final_rhoma
+@njit
 def covariance(x: np.ndarray, w: np.ndarray):
     # x: R states of X where X is kx1 thus x is kxR
     # w: weights of each x_k
@@ -36,31 +38,42 @@ def covariance(x: np.ndarray, w: np.ndarray):
     k, R = x.shape
     w_0 = w[0]
     w = w[1:]
-    try:
-        assert (w.size == k)
-    except AssertionError:
-        raise ('Make sure that every feature of x has an associated weight')
+    if not (w.size == k):
+        raise ValueError ('Make sure that every feature of x has an associated weight')
     C = np.zeros((R, R))
     for q in range(R):
         for p in range(q, R):
             x_p = x[:, p]
             x_q = x[:, q]
-            c_pq = w_0 * np.exp(-.5 * np.sum((x_p - x_q) ** 2 / w ** 2))
+            c_pq = w_0 * np.exp(-.5 * ((x_p - x_q) ** 2 / w ** 2).sum())
             C[p, q], C[q, p] = c_pq, c_pq
     return C
-
-
+spec = [
+    ('X', float64[:]),
+    ('Y', float64[:]),
+    ('K', int32),
+    ('log_lik', float64),
+    ('N', int32),
+    ('R', int32),
+    ('beta', float64[:]),
+    ('draws', float64[:]),
+    ('method', int32),
+    ('states', float64[:]),
+    ('w', float64[:])
+]
+# @jitclass(spec)
 class MMNL:
-    def __init__(self, X, Y, R, K, method, dist=np.random.standard_normal):
+    def __init__(self, X, Y, R, K, method):
         np.random.seed(1)
         # r denotes random coefficients, R number of repetitions
-        self.X = np.zeros((X.shape[0], X.shape[1] + 1))
-        self.X[:, 2:] = X[:, 1:]
-        self.X[:, 1] = 1  # add constant
-        self.X[:, 0] = X[:, 0]  # first column is individual specification
+        # self.X = np.zeros((X.shape[0], X.shape[1] + 1))
+        # self.X[:, 2:] = X[:, 1:]
+        # self.X[:, 1] = 1  # add constant
+        # self.X[:, 0] = X[:, 0]  # first column is individual specification
+        self.X = X
         self.Y = Y
         self.K = K
-        self.log_lik = 0
+        self.log_lik = 0.
         # persons
         self.N = 300
         self.R = R
@@ -69,7 +82,7 @@ class MMNL:
         # -3.78539077e-03,  2.95973673e-01])
 
         if method == 'SMC':
-            self.draws = dist((self.N, self.K, self.R))
+            self.draws = np.random.standard_normal((self.N, self.K, self.R))
             self.method = 0
         elif method == 'QMC':
             # do halton
@@ -82,22 +95,29 @@ class MMNL:
             self.method = 1
             self.w = np.ones(self.K + 1)
         else:
-            raise NameError('%s is not a simulation method, choose SMC, QMC or BMC' % (method))
+            raise NameError('Is not a simulation method, choose SMC, QMC or BMC')
 
     def set_w(self, w):
         self.w = w
 
-    # @jit(nopython=True)
-    def softmax(self, obs, brand):
+    @staticmethod
+    @njit
+    def softmax(X,beta, obs, brand):
         # brand: 0, 1, 2, or 3
         # grab x corresponding to brand choice, [display,feature,price], for each alternative choice
-        brand = int(brand)
-        x = [np.array([self.X[obs, i + j] for i in range(2, self.X.shape[1] - 1, 4)]).reshape((1, self.K)) for j in
-             range(4)]
-        num = np.exp(x[brand] @ self.beta)
-        denom = np.sum([np.exp(x[j] @ self.beta) for j in range(4)], axis=0)
-        if np.any(np.isnan(num)) or np.any(np.isnan(denom)):
-            raise ValueError('num: %f or denom: %a is Nan' % (num, denom))
+        x = np.zeros((4,3))
+        k = 0
+        for i in range(1, X.shape[1] - 1, 4):
+            x[:,k] = np.array([X[obs, i + j] for j in range(4)])
+            k+=1
+        # x_t = [np.array([X[obs, i + j] for i in range(2, X.shape[1] - 1, 4)]).reshape((1, 3)) for j in
+        #      range(4)]
+        num = np.exp(x[brand,:] @ beta)
+        denom = np.exp(x @ beta).sum(axis = 0)
+        # num_t = np.exp(x[brand]@beta)
+        # denom_t = np.sum([np.exp(x[j] @beta) for j in range(4)], axis=0)
+        # if np.any(np.isnan(num)) or np.any(np.isnan(denom)):
+        #     raise ValueError('num: %f or denom: %a is Nan' % (num, denom))
 
         return num / denom
     # @jit(nopython=True)
@@ -110,7 +130,7 @@ class MMNL:
         prod = 1
         i = 0
         while self.X[t, 0] == person:
-            prod *= self.softmax(t, brands[i])
+            prod *= self.softmax(self.X,self.beta, t, int(brands[i]))
             t += 1
             i += 1
             if t == last_t:
@@ -175,19 +195,22 @@ class MMNL:
             raise ValueError('gradient is Nan: %g' % (gradient))
 
         return gradient.mean(axis=1)
-#     @jit(nopython=True)
-    def kernel_gauss(self, theta, args=None):
+
+    @staticmethod
+    @njit
+    def kernel_gauss(beta, w, theta, args=None):
         # f = self.softmax(obs, brand).reshape(-1)
-        C = covariance(self.beta, self.w)
+        C = covariance(beta, w)
         C_inv = np.linalg.inv(C)
         b = theta[:3]
-        B = np.diagflat(theta[3:])
-        A = np.diagflat(self.w[1:] ** 2)
+        B = np.diag(theta[3:])
+        A = np.diag(w[1:] ** 2)
         # print(np.linalg.inv(A)@B + np.identity(self.K))
         # print(np.linalg.det(np.linalg.inv(A)@B + np.identity(self.K)))
-        det = self.w[0] * np.linalg.det(np.linalg.inv(A) @ B + np.identity(self.K)) ** (-.5)
-        prod = (self.beta - b[:, None]).T @ np.linalg.inv(A + B)
-        kernel_mean = det * np.exp(-.5 * np.sum(prod * (self.beta - b[:, None]).T, axis=1)).reshape(1,-1)
+        det = w[0] * np.linalg.det(np.linalg.inv(A) @ B + np.identity(3)) ** (-.5)
+        p1 = (beta - b.reshape((-1,1))).T
+        prod = p1 @ np.linalg.inv(A + B)
+        kernel_mean = det * np.exp(-.5 * (prod * (beta - b.reshape((-1,1))).T).sum(axis=1)).reshape(1,-1)
         # mean = z.T @ C_inv@f
         # var = det - z.T@C_inv@z
         return kernel_mean, C_inv,det
@@ -214,24 +237,25 @@ class MMNL:
             prod = np.sum((1 / (b - a)) * prod.T,axis=1)
 
         return lamb ** 2 *  prod, C_inv, 0
+
 #     @jit(nopython=True)
     def panel_bc(self, person, brands, theta, args=None):
         # person: individual for which probability is to be calculated
         # brands: sequence of choices person i chooses in the period t={1,...,T}
-        if not np.any(args):
-            kernel = args['kernel']
-        else:
-            kernel = self.kernel_gauss
+        # if not np.any(args):
+        #     kernel = self.kernel_matern
+        # else:
+        #     kernel = self.kernel_gauss
         index_finder = np.where(self.X[:, 0] == person)
         t = index_finder[0][0]
         last_t = index_finder[0][-1] + 1
         i = 0
         mean_list = []
         var_list = []
-        kernel_mean, C_inv, det = self.kernel_gauss(args,theta)
+        kernel_mean, C_inv, det = self.kernel_gauss(self.beta,self.w, theta,args)
         var = det - kernel_mean @ C_inv @ kernel_mean.T
         while self.X[t, 0] == person:
-            f = self.softmax(t, brands[i])
+            f = self.softmax(self.X, self.beta, t, int(brands[i]))
             mean = kernel_mean.reshape(1,-1) @ C_inv @ f.T
             mean_list.append(float(mean))
             var_list.append(float(var))
@@ -249,7 +273,7 @@ class MMNL:
         self.beta = theta[:self.K][:, None] + state * theta[self.K:][:, None]
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
-        mean_prod, cov_prod = self.panel_bc(person, brands, args,theta)
+        mean_prod, cov_prod = self.panel_bc(person, brands, theta,args)
         return np.prod(mean_prod), cov_prod
 
     def log_likelihood(self, theta, args=None):
@@ -323,7 +347,7 @@ class MMNL:
         global iters, start
         start = time.time()
         iters = 1
-        result = minimize(self.log_likelihood, theta0, args,
+        result = minimize(self.log_likelihood, theta0, args, callback=self.callback,
                           options={'disp': False, 'maxiter': 3000},
                           method='Nelder-Mead')
         print(result)
@@ -338,13 +362,13 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    infile = open('./data/500_MC_dgp.p', 'rb')
-    big_dict = pickle.load(infile)
-    Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
-    bm = MMNL(X, Y, 5, 3, method='BQMC')
+    # infile = open('./data/500_MC_dgp_uts.p', 'rb')
+    # big_dict = pickle.load(infile)
+    # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
+    bm = MMNL(X, Y, 15, 3, method='BQMC')
 
-    # bm.solver()
-    smc = MMNL(X, Y_dgp[:,0], 250, 3, method='SMC')
-    smc.solver()
+    bm.solver()
+    # smc = MMNL(X, Y, 250, 3, method='SMC')
+    # smc.solver()
     # qmc.solver()
     # print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))
