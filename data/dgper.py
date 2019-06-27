@@ -83,7 +83,7 @@ def probs(X, beta):
     #         print(np.sum(check))
     return Y
 
-def dgp(X: np.ndarray, D, dist=np.random.rand):
+def dgp(X: np.ndarray, D, dist=np.random.standard_normal):
     # X: dataset
     # D: amount of datasets
     np.random.seed(10)
@@ -91,10 +91,10 @@ def dgp(X: np.ndarray, D, dist=np.random.rand):
     the_big_dict = {}
     Y_array = np.zeros((2798, D))
     if dist == QMC:
-        delta = dist(300, 3, D)
+        delta = dist((300, 3, D))
         method = 'QMC'
-    elif dist == np.random.rand:
-        delta = dist(300, 3, D)
+    elif dist == np.random.standard_normal:
+        delta = dist((300, 3, D))
         method = 'MC'
     print(method)
     for i in range(D):

@@ -140,7 +140,7 @@ class MMNL:
     # @jit(nopython=True)
     def SMC(self, person, brands, theta):
         delta = self.draws[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + delta * theta[self.K:][:, None]
+        self.beta = theta[:self.K][:, None] + delta * np.exp(theta[self.K:][:, None])
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         prob_draws = self.panel(person, brands)
@@ -349,8 +349,8 @@ class MMNL:
         iters = 1
         result = minimize(self.log_likelihood, theta0, args,
                           options={'disp': False, 'maxiter': 3000},
-                          method='Nelder-Mead')
-        print(result)
+                          method='BFGS')
+        print(result, '\n', time.time()-start)
         return result
 
     def callback(self, X):
@@ -365,10 +365,10 @@ if __name__ == '__main__':
     # infile = open('./data/500_MC_dgp_uts.p', 'rb')
     # big_dict = pickle.load(infile)
     # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
-    bm = MMNL(X, Y, 15, 3, method='BQMC')
+    # bm = MMNL(X, Y, 15, 3, method='BQMC')
 
-    bm.solver()
-    # smc = MMNL(X, Y, 250, 3, method='SMC')
-    # smc.solver()
+    # bm.solver()
+    smc = MMNL(X, Y, 75, 3, method='QMC')
+    res = smc.solver()
     # qmc.solver()
     # print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))
