@@ -7,7 +7,7 @@ from qmc import QMC
 from functools import reduce
 from sklearn.gaussian_process.kernels import Matern
 import pickle
-from numba import njit
+from numba import jit
 from numba import jitclass
 from numba import float64,int32
 
@@ -30,7 +30,7 @@ def load_data(path):
 #     if np.isinf(s):
 #         raise ValueError('infinity')
 #     return s, final_mu, final_rhoma
-@njit
+@jit(nopython=True)
 def covariance(x: np.ndarray, w: np.ndarray):
     # x: R states of X where X is kx1 thus x is kxR
     # w: weights of each x_k
@@ -101,13 +101,13 @@ class MMNL:
         self.w = w
 
     @staticmethod
-    @njit
+    @jit(nopython=True)
     def softmax(X,beta, obs, brand):
         # brand: 0, 1, 2, or 3
         # grab x corresponding to brand choice, [display,feature,price], for each alternative choice
         x = np.zeros((4,3))
         k = 0
-        for i in range(1, X.shape[1] - 1, 4):
+        for i in range(1, 10, 4):
             x[:,k] = np.array([X[obs, i + j] for j in range(4)])
             k+=1
         # x_t = [np.array([X[obs, i + j] for i in range(2, X.shape[1] - 1, 4)]).reshape((1, 3)) for j in
@@ -130,7 +130,7 @@ class MMNL:
         prod = 1
         i = 0
         while self.X[t, 0] == person:
-            prod *= self.softmax(self.X,self.beta, t, int(brands[i]))
+            prod *= (self.softmax(self.X,self.beta, t, int(brands[i])))
             t += 1
             i += 1
             if t == last_t:
@@ -197,7 +197,7 @@ class MMNL:
         return gradient.mean(axis=1)
 
     @staticmethod
-    @njit
+    @jit(nopython=True)
     def kernel_gauss(beta, w, theta, args=None):
         # f = self.softmax(obs, brand).reshape(-1)
         C = covariance(beta, w)
@@ -349,7 +349,7 @@ class MMNL:
         iters = 1
         result = minimize(self.log_likelihood, theta0, args,
                           options={'disp': False, 'maxiter': 3000},
-                          method='BFGS')
+                          method='L-BFGS-B')
         print(result, '\n', time.time()-start)
         return result
 
