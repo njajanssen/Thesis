@@ -201,13 +201,19 @@ class MMNL:
     def kernel_gauss(beta, w, theta, args=None):
         # f = self.softmax(obs, brand).reshape(-1)
         C = covariance(beta, w)
-        C_inv = np.linalg.inv(C)
+        C_inv = np.linalg.pinv(C)
         b = theta[:3]
-        B = np.diag(theta[3:])
+        B = np.diag(np.exp(theta[3:]))
         A = np.diag(w[1:] ** 2)
         # print(np.linalg.inv(A)@B + np.identity(self.K))
         # print(np.linalg.det(np.linalg.inv(A)@B + np.identity(self.K)))
+        # t1 = np.linalg.inv(A)
+        # t2 = (np.linalg.inv(A) @ B + np.identity(3))
+        # t3 =  np.linalg.det(np.linalg.inv(A) @ B + np.identity(3))
+        # t4 = w[0]*t3
         det = w[0] * np.linalg.det(np.linalg.inv(A) @ B + np.identity(3)) ** (-.5)
+        if np.isnan(det):
+            print(det)
         p1 = (beta - b.reshape((-1,1))).T
         prod = p1 @ np.linalg.inv(A + B)
         kernel_mean = det * np.exp(-.5 * (prod * (beta - b.reshape((-1,1))).T).sum(axis=1)).reshape(1,-1)
@@ -270,7 +276,7 @@ class MMNL:
 #     @jit(nopython=True)
     def BQMC(self, person, brands, theta, args=None):
         state = self.states[person - 1, :, :]
-        self.beta = theta[:self.K][:, None] + state * theta[self.K:][:, None]
+        self.beta = theta[:self.K][:, None] + state * np.exp(theta[self.K:][:, None])
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         mean_prod, cov_prod = self.panel_bc(person, brands, theta,args)
@@ -347,7 +353,7 @@ class MMNL:
         global iters, start
         start = time.time()
         iters = 1
-        result = minimize(self.log_likelihood, theta0, args,
+        result = minimize(self.log_likelihood, theta0, args,callback=self.callback,
                           options={'disp': False, 'maxiter': 3000},
                           method='L-BFGS-B')
         print(result, '\n', time.time()-start)
@@ -365,10 +371,9 @@ if __name__ == '__main__':
     # infile = open('./data/500_MC_dgp_uts.p', 'rb')
     # big_dict = pickle.load(infile)
     # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
-    # bm = MMNL(X, Y, 15, 3, method='BQMC')
-
-    # bm.solver()
-    smc = MMNL(X, Y, 75, 3, method='QMC')
-    res = smc.solver()
+    bm = MMNL(X, Y, 10, 3, method='BQMC')
+    bm.solver()
+    # smc = MMNL(X, Y, 75, 3, method='QMC')
+    # res = smc.solver()
     # qmc.solver()
     # print(qmc.log_likelihood(np.array([ 1.5,  1.,  -1.1,  0.8,  0.1, 1.2])))
