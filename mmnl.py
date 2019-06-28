@@ -280,7 +280,7 @@ class MMNL:
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         mean_prod, cov_prod = self.panel_bc(person, brands, theta,args)
-        return np.prod(mean_prod), cov_prod
+        return np.sum(np.log(mean_prod)), cov_prod
 
     def log_likelihood(self, theta, args=None):
         # prob: method to calculate choice probability (eg: SMC, QMC, Bayesian MC, Curbature, etc.)
@@ -308,7 +308,7 @@ class MMNL:
                 prob_list.append(prob_sim)
             else:  # bmc
                 mean, cov = self.BQMC(person, self.Y[choices], theta, args)
-                self.log_lik += np.log(mean)
+                self.log_lik += mean
                 mean_list.append(mean)
                 cov_list.append([i for i in cov])
 
@@ -368,10 +368,11 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    # infile = open('./data/500_MC_dgp_uts.p', 'rb')
-    # big_dict = pickle.load(infile)
+    infile = open('./data/1000_Y_dgp_tim.p', 'rb')
+    Y_dgp = pickle.load(infile)
     # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
-    bm = MMNL(X, Y, 10, 3, method='BQMC')
+    print(Y_dgp.shape)
+    bm = MMNL(X, Y_dgp[:,1], 10, 3, method='BQMC')
     bm.solver()
     # smc = MMNL(X, Y, 75, 3, method='QMC')
     # res = smc.solver()
