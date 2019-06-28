@@ -271,7 +271,7 @@ class MMNL:
                 break
         # S, final_mean, final_cov = scale(cov_list,mean_list,len(brands))
 
-        return mean_list, var_list
+        return np.array(mean_list), var_list
 
 #     @jit(nopython=True)
     def BQMC(self, person, brands, theta, args=None):
@@ -280,7 +280,7 @@ class MMNL:
         if np.any(np.isnan(self.beta)):
             raise ValueError('beta: %g is NaN' % (self.beta[0]))
         mean_prod, cov_prod = self.panel_bc(person, brands, theta,args)
-        return np.sum(np.log(mean_prod)), cov_prod
+        return np.sum(np.log(mean_prod+1e-6)), cov_prod
 
     def log_likelihood(self, theta, args=None):
         # prob: method to calculate choice probability (eg: SMC, QMC, Bayesian MC, Curbature, etc.)
@@ -353,7 +353,7 @@ class MMNL:
         global iters, start
         start = time.time()
         iters = 1
-        result = minimize(self.log_likelihood, theta0, args,callback=self.callback,
+        result = minimize(self.log_likelihood, theta0, args,
                           options={'disp': False, 'maxiter': 3000},
                           method='L-BFGS-B')
         print(result, '\n', time.time()-start)
