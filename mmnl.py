@@ -45,7 +45,7 @@ def covariance(x: np.ndarray, w: np.ndarray):
         for p in range(q, R):
             x_p = x[:, p]
             x_q = x[:, q]
-            c_pq = w_0 * np.exp(-.5 * ((x_p - x_q) ** 2 / w ** 2).sum())
+            c_pq = w_0 * np.exp(-.5 * ((x_p - x_q) ** 2 / w ** 2).sum()) +1e-06
             C[p, q], C[q, p] = c_pq, c_pq
     return C
 spec = [
@@ -372,7 +372,7 @@ if __name__ == '__main__':
     Y_dgp = pickle.load(infile)
     # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
     print(Y_dgp.shape)
-    bm = MMNL(X, Y_dgp[:,1], 10, 3, method='BQMC')
+    bm = MMNL(X, Y_dgp[:,16], 10, 3, method='BQMC')
     bm.solver()
     # smc = MMNL(X, Y, 75, 3, method='QMC')
     # res = smc.solver()
