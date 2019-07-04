@@ -48,19 +48,19 @@ def covariance(x: np.ndarray, w: np.ndarray):
             c_pq = w_0 * np.exp(-.5 * ((x_p - x_q) ** 2 / w ** 2).sum()) +1e-06
             C[p, q], C[q, p] = c_pq, c_pq
     return C
-spec = [
-    ('X', float64[:]),
-    ('Y', float64[:]),
-    ('K', int32),
-    ('log_lik', float64),
-    ('N', int32),
-    ('R', int32),
-    ('beta', float64[:]),
-    ('draws', float64[:]),
-    ('method', int32),
-    ('states', float64[:]),
-    ('w', float64[:])
-]
+# spec = [
+#     ('X', float64[:]),
+#     ('Y', float64[:]),
+#     ('K', int32),
+#     ('log_lik', float64),
+#     ('N', int32),
+#     ('R', int32),
+#     ('beta', float64[:]),
+#     ('draws', float64[:]),
+#     ('method', int32),
+#     ('states', float64[:]),
+#     ('w', float64[:])
+# ]
 # @jitclass(spec)
 class MMNL:
     def __init__(self, X, Y, R, K, method):
