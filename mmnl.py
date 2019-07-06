@@ -368,7 +368,7 @@ class MMNL:
 
 if __name__ == '__main__':
     X, Y = load_data('data/data.npy')
-    infile = open('./data/1000_Y_dgp_tim.p', 'rb')
+    infile = open('./data/1000_Y_dgp.p', 'rb')
     Y_dgp = pickle.load(infile)
     # Y_dgp = big_dict['theta: [ 1.5  1.  -1.1  0.8  0.1  1.2]']
     print(Y_dgp.shape)
