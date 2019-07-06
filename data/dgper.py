@@ -6,13 +6,8 @@ import time
 import os
 os.chdir('..')
 from qmc import QMC
+from mmnl import MMNL
 os.chdir('./data')
-
-d = pd.read_csv('catsup_trainformat.csv', delimiter=',')
-d.head(10)
-
-X = d.values[:,1:-1]
-X.shape
 
 def utilities(X, beta):
     #performs matrix product to obtain the probability of every row
@@ -43,11 +38,6 @@ def utilities(X, beta):
 #         print(np.sum(check))
         Y.append(int(choice))
     return np.array(Y)
-
-#display_mean, feature_mean, price_mean, display_sigma, feature_sigma, price_disgma
-N = X.shape[0]
-K = 3
-
 
 def probs(X, beta):
     # performs matrix product to obtain the probability of every row
@@ -83,28 +73,65 @@ def probs(X, beta):
     #         print(np.sum(check))
     return Y
 
-def dgp(X: np.ndarray, D, dist=np.random.standard_normal):
+def dgp(X: np.ndarray, D, method):
     # X: dataset
     # D: amount of datasets
-    np.random.seed(10)
+    # np.random.seed(10)
+    # theta = np.array([1.5,  1.,  -1.1,  0.4,  0.1,  0.6])
+    # the_big_dict = {}
+    # Y_array = np.zeros((2798, D))
+    # if dist == QMC:
+    #     delta = dist((300, 3, D))
+    #     method = 'QMC'
+    # elif dist == np.random.standard_normal:
+    #     delta = dist((300, 3, D))
+    #     method = 'MC'
+    # print(method)
+    # for i in range(D):
+    #     delta_d = delta[:, :, i].T
+    #     beta = theta[:K][:, None] + delta_d * theta[K:][:, None]
+    #     Y = probs(X, beta)
+    #     Y_array[:, i] = Y
+    # the_big_dict['theta: %s' % (theta)] = Y_array
+    #X: dataset
+    #D: amount of datasets
+    np.random.seed(123)
     theta = np.array([1.5,  1.,  -1.1,  0.4,  0.1,  0.6])
-    the_big_dict = {}
-    Y_array = np.zeros((2798, D))
-    if dist == QMC:
-        delta = dist((300, 3, D))
-        method = 'QMC'
-    elif dist == np.random.standard_normal:
-        delta = dist((300, 3, D))
-        method = 'MC'
+    Y_array = np.zeros((2798,D))
+    P = np.zeros((11192,D))
+    if method == 'QMC':
+        delta = QMC(300,3,D)
+    elif method == 'SMC':
+        delta = np.random.standard_normal((300,3,D))
     print(method)
-    for i in range(D):
-        delta_d = delta[:, :, i].T
-        beta = theta[:K][:, None] + delta_d * theta[K:][:, None]
-        Y = probs(X, beta)
-        Y_array[:, i] = Y
-    the_big_dict['theta: %s' % (theta)] = Y_array
-    return the_big_dict, method
+
+    for d in range(D):
+
+        Y = []
+        for row in X:
+            beta = theta[:3].reshape(-1, 1) + delta[int(row[0])-1,:,:] * theta[3:].reshape(-1, 1)
+            uts = []
+            for k in range(4):
+                x = np.array([row[1 + k], row[5 + k], row[9 + k]])
+                g = np.random.gumbel()
+                uts.append(x@ beta +g )
+
+            pred = np.argmax(uts)
+            Y.append(pred)
+        Y_array[:,d] = Y
+
+
+
+
+
+    return Y_array
+def load_data(path):
+    dat = np.load(path)
+    X = dat[:, :-1]
+    Y = np.reshape(dat[:, -1], (-1, 1))
+    return X, Y
+X, Y = load_data('data.npy')
 D = 10
-dicter, method = dgp(X,D)
+Y_dgp, P= dgp(X,D,'SMC')
 # timdgp = pickle.load(open('dgp_tip.pickle','rb'))
 # print(timdgp)
